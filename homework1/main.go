@@ -5,12 +5,35 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"sort"
-	"strings"
+	"polisAnnaBrusnitsyna/utils"
+	"regexp"
 )
 
-func createAndWriteInvertedIndex(dirname string, outputFile string) error {
-	var invertedIndexes = make(map[string][]string)
+type FileWithFreq struct {
+	Filename string
+	Freq int
+}
+
+func writeInvertedIndex(outputFile string, invertedIndexes map[string][]FileWithFreq) error {
+	file, err := os.Create(outputFile)
+	if err != nil {
+		return err
+	}
+	indexes, err := json.Marshal(invertedIndexes)
+	if err != nil {
+		return err
+	}
+	if _, err = file.Write(indexes); err != nil {
+		return err
+	}
+	if err = file.Close();  err != nil {
+		return err
+	}
+	return nil
+}
+
+func createInvertedIndex(dirname string, outputFile string) error {
+	var invertedIndexes = make(map[string][]FileWithFreq)
 	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
 		return err
@@ -21,32 +44,24 @@ func createAndWriteInvertedIndex(dirname string, outputFile string) error {
 		if err != nil {
 			return err
 		}
-		wordsInCurrentFile := strings.Fields(string(data))
+		re := regexp.MustCompile(`[^\w]+`)
+		wordsInCurrentFile := re.Split(string(data), -1)
 		for _, word := range wordsInCurrentFile {
-			sort.Strings(invertedIndexes[word])
-			if sort.SearchStrings(invertedIndexes[word], currentFile.Name()) >= len(invertedIndexes[word]) {
-				invertedIndexes[word] = append(invertedIndexes[word], currentFile.Name())
+			stemWord := utils.Stem(word)
+			isFound := false
+			for i, el := range invertedIndexes[stemWord] {
+				if el.Filename == currentFile.Name() {
+					invertedIndexes[stemWord][i].Freq++
+					isFound = true
+					break
+				}
+			}
+			if !isFound {
+				invertedIndexes[stemWord] = append(invertedIndexes[stemWord], FileWithFreq{currentFile.Name(), 1})
 			}
 		}
 	}
-
-	file, err := os.Create(outputFile)
-	if err != nil {
-		return err
-	}
-	indexes, err := json.Marshal(invertedIndexes)
-	if err != nil {
-		return err
-	}
-	_, err = file.Write(indexes)
-	if err != nil {
-		return err
-	}
-	err = file.Close()
-	if err != nil {
-		return err
-	}
-	return nil
+	return writeInvertedIndex(outputFile, invertedIndexes)
 }
 
 func main() {
@@ -54,7 +69,7 @@ func main() {
 		log.Fatal("There must be 2 arguments: path to the folder with input files and output file path")
 	}
 
-	err := createAndWriteInvertedIndex(os.Args[1], os.Args[2])
+	err := createInvertedIndex(os.Args[1], os.Args[2])
 	if err != nil {
 		log.Fatal(err)
 	}
