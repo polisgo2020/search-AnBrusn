@@ -1,12 +1,12 @@
 package index
 
 import (
-	"fmt"
+	"regexp"
+	"sort"
+
 	"github.com/bbalet/stopwords"
 	"github.com/kljensen/snowball"
 	"github.com/polisgo2020/search-AnBrusn/utils"
-	"regexp"
-	"sort"
 )
 
 func getTokensFromInput(inpStr string) ([]string, error) {
@@ -27,10 +27,10 @@ func getTokensFromInput(inpStr string) ([]string, error) {
 	return userInput, nil
 }
 
-func FindInIndex(index map[string][]FileWithFreq, userInput string) error {
+func (index Index) FindInIndex(userInput string) ([]FileWithFreq, error) {
 	inputTokens, err := getTokensFromInput(userInput)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var searchResults []FileWithFreq
 	for i, token := range inputTokens {
@@ -44,17 +44,10 @@ func FindInIndex(index map[string][]FileWithFreq, userInput string) error {
 			searchResults = getIntersection(searchResults, filesWithToken)
 		}
 	}
-	if len(searchResults) == 0 {
-		fmt.Println("No results")
-		return nil
-	}
 	sort.Slice(searchResults, func(i, j int) bool {
 		return searchResults[i].Freq > searchResults[j].Freq
 	})
-	for _, el := range searchResults {
-		fmt.Printf("%s (%d words were found)\n", el.Filename, el.Freq)
-	}
-	return nil
+	return searchResults, nil
 }
 
 func getIntersection(slice1, slice2 []FileWithFreq) (intersection []FileWithFreq) {
@@ -67,5 +60,5 @@ func getIntersection(slice1, slice2 []FileWithFreq) (intersection []FileWithFreq
 			intersection = append(intersection, FileWithFreq{el.Filename, el.Freq + num})
 		}
 	}
-	return intersection
+	return
 }

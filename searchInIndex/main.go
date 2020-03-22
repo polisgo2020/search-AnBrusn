@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"github.com/polisgo2020/search-AnBrusn/index"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+
+	"github.com/polisgo2020/search-AnBrusn/index"
 )
 
 func readUserInput() string {
@@ -15,7 +17,7 @@ func readUserInput() string {
 	return scanner.Text()
 }
 
-func readIndexFromFile(indexPath string) (map[string][]index.FileWithFreq, error) {
+func readIndexFromFile(indexPath string) (index.Index, error) {
 	data, err := ioutil.ReadFile(indexPath)
 	if err != nil {
 		return nil, err
@@ -36,7 +38,15 @@ func main() {
 	if er != nil {
 		log.Fatal(er)
 	}
-	if er := index.FindInIndex(invertedIndex, readUserInput()); er != nil {
+	searchResults, er := invertedIndex.FindInIndex(readUserInput())
+	if er != nil {
 		log.Fatal(er)
+	}
+	if len(searchResults) == 0 {
+		fmt.Println("No results")
+	} else {
+		for _, el := range searchResults {
+			fmt.Printf("%s (%d words were found)\n", el.Filename, el.Freq)
+		}
 	}
 }
