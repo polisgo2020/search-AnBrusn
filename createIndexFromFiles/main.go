@@ -78,20 +78,28 @@ func createFromDirectory(dirname string) (index.Index, error) {
 	}
 
 	wgForListener.Wait()
+	if err, ok := <-errChan; ok {
+		close(errChan)
+		return invertedIndex, err
+	}
 	return invertedIndex, nil
 }
 
-func listener(invertedIndex index.Index, dataChan <-chan [2]string, errChan <-chan error, wg *sync.WaitGroup) {
+func listener(invertedIndex index.Index, dataChan chan [2]string, errChan chan error, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		select {
 		case <-errChan:
+			close(dataChan)
 			return
 		case wordInfo, ok := <-dataChan:
 			if !ok {
+				close(errChan)
 				return
 			}
-			invertedIndex.AddToken(wordInfo[0], wordInfo[1])
+			if err := invertedIndex.AddToken(wordInfo[0], wordInfo[1]); err != nil {
+				errChan <- err
+			}
 		}
 	}
 }
