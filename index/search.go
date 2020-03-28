@@ -6,7 +6,6 @@ import (
 
 	"github.com/bbalet/stopwords"
 	"github.com/kljensen/snowball"
-	"github.com/polisgo2020/search-AnBrusn/utils"
 )
 
 func getTokensFromInput(inpStr string) ([]string, error) {
@@ -21,7 +20,7 @@ func getTokensFromInput(inpStr string) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			userInput = utils.AppendIfMissing(userInput, stemWord)
+			userInput = AppendIfMissing(userInput, stemWord)
 		}
 	}
 	return userInput, nil

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"log"
@@ -10,6 +11,10 @@ import (
 	"sync"
 
 	"github.com/polisgo2020/search-AnBrusn/index"
+)
+
+var (
+	Re = regexp.MustCompile(`[^\w]+`)
 )
 
 func closeFile(f *os.File) {
@@ -34,19 +39,23 @@ func writeInvertedIndex(outputFile string, invertedIndexes index.Index) error {
 	return nil
 }
 
-func readFile(path string, filename string, dataChan chan<- [2]string, errChan chan<- error,
-	wg *sync.WaitGroup, mutex *sync.Mutex) {
+func readFile(ctx context.Context, cancel context.CancelFunc, path string, filename string,
+	dataChan chan<- [2]string, errChan chan<- error, wg *sync.WaitGroup) {
 	defer wg.Done()
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		errChan <- err
+		cancel()
+		return
 	}
-	re := regexp.MustCompile(`[^\w]+`)
-	words := re.Split(string(data), -1)
+	words := Re.Split(string(data), -1)
 	for _, word := range words {
-		mutex.Lock()
-		dataChan <- [2]string{word, filename}
-		mutex.Unlock()
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			dataChan <- [2]string{word, filename}
+		}
 	}
 }
 
@@ -54,49 +63,46 @@ func createFromDirectory(dirname string) (index.Index, error) {
 	invertedIndex := make(index.Index)
 	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
-		return invertedIndex, err
+		return nil, err
 	}
 
 	errChan := make(chan error)
 	dataChan := make(chan [2]string)
-	mutex := &sync.Mutex{}
+	defer close(errChan)
+	defer close(dataChan)
 
-	wgForListener := &sync.WaitGroup{}
-	wgForListener.Add(1)
-	go listener(invertedIndex, dataChan, errChan, wgForListener)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go listener(ctx, invertedIndex, dataChan, errChan)
 
 	wgForFilesReading := &sync.WaitGroup{}
 	wgForFilesReading.Add(len(files))
 	go func() {
 		wgForFilesReading.Wait()
-		close(dataChan)
+		cancel()
 	}()
 
 	for _, currentFile := range files {
 		path := filepath.Join(dirname, currentFile.Name())
-		go readFile(path, currentFile.Name(), dataChan, errChan, wgForFilesReading, mutex)
+		go readFile(ctx, cancel, path, currentFile.Name(), dataChan, errChan, wgForFilesReading)
 	}
 
-	wgForListener.Wait()
-	if err, ok := <-errChan; ok {
-		close(errChan)
-		return invertedIndex, err
-	}
-	return invertedIndex, nil
-}
-
-func listener(invertedIndex index.Index, dataChan chan [2]string, errChan chan error, wg *sync.WaitGroup) {
-	defer wg.Done()
 	for {
 		select {
-		case <-errChan:
-			close(dataChan)
+		case err := <-errChan:
+			return nil, err
+		case <-ctx.Done():
+			return invertedIndex, nil
+		}
+	}
+}
+
+func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]string, errChan chan error) {
+	for {
+		select {
+		case <-ctx.Done():
 			return
-		case wordInfo, ok := <-dataChan:
-			if !ok {
-				close(errChan)
-				return
-			}
+		case wordInfo := <-dataChan:
 			if err := invertedIndex.AddToken(wordInfo[0], wordInfo[1]); err != nil {
 				errChan <- err
 			}
