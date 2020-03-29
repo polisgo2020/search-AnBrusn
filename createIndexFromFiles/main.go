@@ -1,13 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sync"
 
 	"github.com/polisgo2020/search-AnBrusn/index"
+)
+
+var (
+	Re = regexp.MustCompile(`[^\w]+`)
 )
 
 func closeFile(f *os.File) {
@@ -32,20 +39,75 @@ func writeInvertedIndex(outputFile string, invertedIndexes index.Index) error {
 	return nil
 }
 
-func readFromDirectory(dirname string) (map[string]string, error) {
+func readFile(ctx context.Context, path string, filename string,
+	dataChan chan<- [2]string, errChan chan<- error, wg *sync.WaitGroup) {
+	defer wg.Done()
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		errChan <- err
+		return
+	}
+	words := Re.Split(string(data), -1)
+	for _, word := range words {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			dataChan <- [2]string{word, filename}
+		}
+	}
+}
+
+func createFromDirectory(dirname string) (index.Index, error) {
+	invertedIndex := make(index.Index)
 	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
 		return nil, err
 	}
-	dataFromFiles := make(map[string]string)
+
+	errChan := make(chan error)
+	dataChan := make(chan [2]string)
+	defer close(errChan)
+	defer close(dataChan)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go listener(ctx, invertedIndex, dataChan, errChan)
+
+	wgForFilesReading := &sync.WaitGroup{}
+	wgForFilesReading.Add(len(files))
+	go func() {
+		wgForFilesReading.Wait()
+		cancel()
+	}()
+
 	for _, currentFile := range files {
-		data, err := ioutil.ReadFile(filepath.Join(dirname, currentFile.Name()))
-		if err != nil {
-			return nil, err
-		}
-		dataFromFiles[currentFile.Name()] = string(data)
+		path := filepath.Join(dirname, currentFile.Name())
+		go readFile(ctx, path, currentFile.Name(), dataChan, errChan, wgForFilesReading)
 	}
-	return dataFromFiles, nil
+
+	for {
+		select {
+		case err := <-errChan:
+			cancel()
+			return nil, err
+		case <-ctx.Done():
+			return invertedIndex, nil
+		}
+	}
+}
+
+func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]string, errChan chan error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case wordInfo := <-dataChan:
+			if err := invertedIndex.AddToken(wordInfo[0], wordInfo[1]); err != nil {
+				errChan <- err
+			}
+		}
+	}
 }
 
 func main() {
@@ -53,11 +115,7 @@ func main() {
 		log.Fatal("There must be 2 arguments: path to the folder with input files and output file path")
 	}
 
-	data, err := readFromDirectory(os.Args[1])
-	if err != nil {
-		log.Fatal(err)
-	}
-	invertedIndex, err := index.CreateInvertedIndex(data)
+	invertedIndex, err := createFromDirectory(os.Args[1])
 	if err != nil {
 		log.Fatal(err)
 	}

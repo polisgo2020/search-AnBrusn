@@ -1,4 +1,4 @@
-package utils
+package index
 
 func AppendIfMissing(slice []string, newElement string) []string {
 	for _, el := range slice {
