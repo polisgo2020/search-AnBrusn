@@ -39,13 +39,12 @@ func writeInvertedIndex(outputFile string, invertedIndexes index.Index) error {
 	return nil
 }
 
-func readFile(ctx context.Context, cancel context.CancelFunc, path string, filename string,
+func readFile(ctx context.Context, path string, filename string,
 	dataChan chan<- [2]string, errChan chan<- error, wg *sync.WaitGroup) {
 	defer wg.Done()
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		errChan <- err
-		cancel()
 		return
 	}
 	words := Re.Split(string(data), -1)
@@ -84,12 +83,13 @@ func createFromDirectory(dirname string) (index.Index, error) {
 
 	for _, currentFile := range files {
 		path := filepath.Join(dirname, currentFile.Name())
-		go readFile(ctx, cancel, path, currentFile.Name(), dataChan, errChan, wgForFilesReading)
+		go readFile(ctx, path, currentFile.Name(), dataChan, errChan, wgForFilesReading)
 	}
 
 	for {
 		select {
 		case err := <-errChan:
+			cancel()
 			return nil, err
 		case <-ctx.Done():
 			return invertedIndex, nil
