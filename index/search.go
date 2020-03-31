@@ -16,6 +16,7 @@ func getTokensFromInput(inpStr string) ([]string, error) {
 	})
 	for _, word := range wordsInInput {
 		stemWord := stopwords.CleanString(word, "en", true)
+		stemWord = strings.TrimSpace(stemWord)
 		if len(stemWord) > 0 {
 			var err error
 			stemWord, err = snowball.Stem(word, "english", true)
