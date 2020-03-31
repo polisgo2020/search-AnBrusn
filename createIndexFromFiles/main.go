@@ -7,14 +7,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/polisgo2020/search-AnBrusn/index"
-)
-
-var (
-	Re = regexp.MustCompile(`[^\w]+`)
 )
 
 func closeFile(f *os.File) {
@@ -47,7 +44,9 @@ func readFile(ctx context.Context, path string, filename string,
 		errChan <- err
 		return
 	}
-	words := Re.Split(string(data), -1)
+	words := strings.FieldsFunc(string(data), func(r rune) bool {
+		return !unicode.IsLetter(r)
+	})
 	for _, word := range words {
 		select {
 		case <-ctx.Done():
