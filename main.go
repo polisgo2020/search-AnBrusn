@@ -216,7 +216,7 @@ func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]s
 func main() {
 	app := &cli.App{
 		Name:  "Index",
-		Usage: "Create index from directory and searchInIndex in index",
+		Usage: "Create index from directory and search in index",
 		Commands: []*cli.Command{
 			{
 				Name:  "build",
@@ -224,7 +224,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:     "dir",
-						Usage:    "Path to directory with imput files",
+						Usage:    "Path to directory with input files",
 						Required: true,
 					},
 					&cli.StringFlag{
