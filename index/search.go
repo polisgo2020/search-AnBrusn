@@ -38,7 +38,7 @@ func (index Index) FindInIndex(userInput string) ([]FileWithFreq, error) {
 	for i, token := range inputTokens {
 		filesWithToken, ok := index[token]
 		if !ok {
-			break
+			return nil, nil
 		}
 		if i == 0 {
 			searchResults = filesWithToken

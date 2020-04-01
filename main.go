@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,17 @@ import (
 	"github.com/polisgo2020/search-AnBrusn/index"
 	"github.com/urfave/cli/v2"
 )
+
+var searchForm = []byte(`
+<html>
+	<body>
+	<form action="/searchInIndex" method="get">
+		Search: <input type="text" name="userInput">
+		<input type="submit" value="Search">
+	</form>
+	</body>
+</html>
+`)
 
 func closeFile(f *os.File) {
 	if err := f.Close(); err != nil {
@@ -99,10 +111,70 @@ func createFromDirectory(dirname string) (index.Index, error) {
 	}
 }
 
-func readUserInputFromStdin() string {
+func searchWithInputFromStdin(indexFile string) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
-	return scanner.Text()
+	userInput := scanner.Text()
+	invertedIndex, err := readIndexFromFile(indexFile)
+	if err != nil {
+		return err
+	}
+	searchResults, err := invertedIndex.FindInIndex(userInput)
+	if err != nil {
+		return err
+	}
+	if len(searchResults) == 0 {
+		fmt.Println("No results")
+	} else {
+		for _, el := range searchResults {
+			fmt.Printf("%s (%d words were found)\n", el.Filename, el.Freq)
+		}
+	}
+	return nil
+}
+
+func searchWithInputFromHttp(server string, indexFile string) error {
+	srv := &http.Server{Addr: server}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(searchForm)
+	})
+	http.HandleFunc("/searchInIndex", func(w http.ResponseWriter, r *http.Request) {
+		userInput := r.FormValue("userInput")
+		invertedIndex, err := readIndexFromFile(indexFile)
+		if err != nil {
+			http.Error(w, "reading index error", http.StatusInternalServerError)
+			return
+		}
+		searchResults, err := invertedIndex.FindInIndex(userInput)
+		if err != nil {
+			http.Error(w, "searching error", http.StatusInternalServerError)
+			return
+		}
+		if len(searchResults) == 0 {
+			fmt.Fprintln(w, "No results")
+		} else {
+			for _, el := range searchResults {
+				fmt.Fprintf(w, "%s (%d words were found)\n", el.Filename, el.Freq)
+			}
+		}
+	})
+	if err := srv.ListenAndServe(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func searchInIndex(c *cli.Context) error {
+	if c.String("http") == "" {
+		if err := searchWithInputFromStdin(c.String("index")); err != nil {
+			return err
+		}
+	} else {
+		if err := searchWithInputFromHttp(c.String("http"), c.String("index")); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func readIndexFromFile(indexPath string) (index.Index, error) {
@@ -110,11 +182,22 @@ func readIndexFromFile(indexPath string) (index.Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	var index = map[string][]index.FileWithFreq{}
-	if er := json.Unmarshal(data, &index); er != nil {
+	var invertedIndex = map[string][]index.FileWithFreq{}
+	if er := json.Unmarshal(data, &invertedIndex); er != nil {
 		return nil, err
 	}
-	return index, nil
+	return invertedIndex, nil
+}
+
+func createIndexFromFiles(c *cli.Context) error {
+	invertedIndex, err := createFromDirectory(c.String("dir"))
+	if err != nil {
+		return err
+	}
+	if err := writeInvertedIndex(c.String("index"), invertedIndex); err != nil {
+		return err
+	}
+	return nil
 }
 
 func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]string, errChan chan error) {
@@ -130,42 +213,12 @@ func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]s
 	}
 }
 
-func createIndexFromFiles(c *cli.Context) error {
-	invertedIndex, err := createFromDirectory(c.String("dir"))
-	if err != nil {
-		return err
-	}
-	if err := writeInvertedIndex(c.String("index"), invertedIndex); err != nil {
-		return err
-	}
-	return nil
-}
-
-func searchInIndex(c *cli.Context) error {
-	invertedIndex, err := readIndexFromFile(c.String("index"))
-	if err != nil {
-		return err
-	}
-	searchResults, err := invertedIndex.FindInIndex(readUserInputFromStdin())
-	if err != nil {
-		return err
-	}
-	if len(searchResults) == 0 {
-		fmt.Println("No results")
-	} else {
-		for _, el := range searchResults {
-			fmt.Printf("%s (%d words were found)\n", el.Filename, el.Freq)
-		}
-	}
-	return nil
-}
-
 func main() {
 	app := &cli.App{
 		Name:  "Index",
-		Usage: "Create index from directory and search in index",
+		Usage: "Create index from directory and searchInIndex in index",
 		Commands: []*cli.Command{
-			&cli.Command{
+			{
 				Name:  "build",
 				Usage: "Create index from directory",
 				Flags: []cli.Flag{
@@ -182,7 +235,7 @@ func main() {
 				},
 				Action: createIndexFromFiles,
 			},
-			&cli.Command{
+			{
 				Name:  "search",
 				Usage: "Search in index",
 				Flags: []cli.Flag{
@@ -191,7 +244,7 @@ func main() {
 						Usage:    "Path to index file",
 						Required: true,
 					},
-					&cli.BoolFlag{
+					&cli.StringFlag{
 						Name:  "http",
 						Usage: "Input from http",
 					},
