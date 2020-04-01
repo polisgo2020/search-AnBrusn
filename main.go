@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/polisgo2020/search-AnBrusn/index"
+	"github.com/urfave/cli/v2"
 )
 
 func closeFile(f *os.File) {
@@ -96,6 +99,24 @@ func createFromDirectory(dirname string) (index.Index, error) {
 	}
 }
 
+func readUserInputFromStdin() string {
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	return scanner.Text()
+}
+
+func readIndexFromFile(indexPath string) (index.Index, error) {
+	data, err := ioutil.ReadFile(indexPath)
+	if err != nil {
+		return nil, err
+	}
+	var index = map[string][]index.FileWithFreq{}
+	if er := json.Unmarshal(data, &index); er != nil {
+		return nil, err
+	}
+	return index, nil
+}
+
 func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]string, errChan chan error) {
 	for {
 		select {
@@ -109,16 +130,79 @@ func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]s
 	}
 }
 
+func createIndexFromFiles(c *cli.Context) error {
+	invertedIndex, err := createFromDirectory(c.String("dir"))
+	if err != nil {
+		return err
+	}
+	if err := writeInvertedIndex(c.String("index"), invertedIndex); err != nil {
+		return err
+	}
+	return nil
+}
+
+func searchInIndex(c *cli.Context) error {
+	invertedIndex, err := readIndexFromFile(c.String("index"))
+	if err != nil {
+		return err
+	}
+	searchResults, err := invertedIndex.FindInIndex(readUserInputFromStdin())
+	if err != nil {
+		return err
+	}
+	if len(searchResults) == 0 {
+		fmt.Println("No results")
+	} else {
+		for _, el := range searchResults {
+			fmt.Printf("%s (%d words were found)\n", el.Filename, el.Freq)
+		}
+	}
+	return nil
+}
+
 func main() {
-	if len(os.Args) < 3 {
-		log.Fatal("There must be 2 arguments: path to the folder with input files and output file path")
+	app := &cli.App{
+		Name:  "Index",
+		Usage: "Create index from directory and search in index",
+		Commands: []*cli.Command{
+			&cli.Command{
+				Name:  "build",
+				Usage: "Create index from directory",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "dir",
+						Usage:    "Path to directory with imput files",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:     "index",
+						Usage:    "Path to output index file",
+						Required: true,
+					},
+				},
+				Action: createIndexFromFiles,
+			},
+			&cli.Command{
+				Name:  "search",
+				Usage: "Search in index",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "index",
+						Usage:    "Path to index file",
+						Required: true,
+					},
+					&cli.BoolFlag{
+						Name:  "http",
+						Usage: "Input from http",
+					},
+				},
+				Action: searchInIndex,
+			},
+		},
 	}
 
-	invertedIndex, err := createFromDirectory(os.Args[1])
+	err := app.Run(os.Args)
 	if err != nil {
-		log.Fatal(err)
-	}
-	if err := writeInvertedIndex(os.Args[2], invertedIndex); err != nil {
 		log.Fatal(err)
 	}
 }
