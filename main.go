@@ -182,7 +182,7 @@ func readIndexFromFile(indexPath string) (index.Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	var invertedIndex = map[string][]index.FileWithFreq{}
+	var invertedIndex = index.Index{}
 	if er := json.Unmarshal(data, &invertedIndex); er != nil {
 		return nil, err
 	}
