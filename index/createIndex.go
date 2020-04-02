@@ -1,6 +1,8 @@
 package index
 
 import (
+	"strings"
+
 	"github.com/bbalet/stopwords"
 	"github.com/kljensen/snowball"
 )
@@ -14,6 +16,7 @@ type Index map[string][]FileWithFreq
 
 func (index Index) AddToken(word string, filename string) error {
 	stemWord := stopwords.CleanString(word, "en", true)
+	stemWord = strings.TrimSpace(stemWord)
 	if len(stemWord) > 0 {
 		stemWord, err := snowball.Stem(stemWord, "english", true)
 		if err != nil {

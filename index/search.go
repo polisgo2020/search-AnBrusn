@@ -1,8 +1,9 @@
 package index
 
 import (
-	"regexp"
 	"sort"
+	"strings"
+	"unicode"
 
 	"github.com/bbalet/stopwords"
 	"github.com/kljensen/snowball"
@@ -10,10 +11,12 @@ import (
 
 func getTokensFromInput(inpStr string) ([]string, error) {
 	var userInput []string
-	re := regexp.MustCompile(`[^\w]+`)
-	wordsInInput := re.Split(inpStr, -1)
+	wordsInInput := strings.FieldsFunc(inpStr, func(r rune) bool {
+		return !unicode.IsLetter(r)
+	})
 	for _, word := range wordsInInput {
 		stemWord := stopwords.CleanString(word, "en", true)
+		stemWord = strings.TrimSpace(stemWord)
 		if len(stemWord) > 0 {
 			var err error
 			stemWord, err = snowball.Stem(word, "english", true)
@@ -35,7 +38,7 @@ func (index Index) FindInIndex(userInput string) ([]FileWithFreq, error) {
 	for i, token := range inputTokens {
 		filesWithToken, ok := index[token]
 		if !ok {
-			break
+			return nil, nil
 		}
 		if i == 0 {
 			searchResults = filesWithToken
