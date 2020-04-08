@@ -35,6 +35,7 @@ func closeFile(f *os.File) {
 	}
 }
 
+// writeInvertedIndex encodes index with json and writes it in output file.
 func writeInvertedIndex(outputFile string, invertedIndexes index.Index) error {
 	file, err := os.Create(outputFile)
 	if err != nil {
@@ -51,6 +52,7 @@ func writeInvertedIndex(outputFile string, invertedIndexes index.Index) error {
 	return nil
 }
 
+// readFile extracts tokens from file and adds them in inverted index.
 func readFile(ctx context.Context, path string, filename string,
 	dataChan chan<- [2]string, errChan chan<- error, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -72,6 +74,7 @@ func readFile(ctx context.Context, path string, filename string,
 	}
 }
 
+// createFromDirectory extracts tokens from files in directory and adds them in inverted index.
 func createFromDirectory(dirname string) (index.Index, error) {
 	invertedIndex := make(index.Index)
 	files, err := ioutil.ReadDir(dirname)
@@ -111,6 +114,7 @@ func createFromDirectory(dirname string) (index.Index, error) {
 	}
 }
 
+// searchWithInputFromStdin reads user input from stdin and searches over inverted index.
 func searchWithInputFromStdin(indexFile string) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
@@ -133,6 +137,7 @@ func searchWithInputFromStdin(indexFile string) error {
 	return nil
 }
 
+// searchWithInputFromHttp creates http user interface, reads user input and searches over inverted index.
 func searchWithInputFromHttp(server string, indexFile string) error {
 	srv := &http.Server{Addr: server}
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +182,7 @@ func searchInIndex(c *cli.Context) error {
 	return nil
 }
 
+// readIndexFromFile reads and decodes inverted index.
 func readIndexFromFile(indexPath string) (index.Index, error) {
 	data, err := ioutil.ReadFile(indexPath)
 	if err != nil {
