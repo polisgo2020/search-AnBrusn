@@ -21,3 +21,4 @@ Search results are ranged by amount of found tokens.
 -   [`Snowball`](github.com/kljensen/snowball)
 -   [`Cli`](github.com/urfave/cli/v2)
 -   [`Zerolog`](github.com/rs/zerolog)
+-   [`Env`](github.com/caarlos0/env)

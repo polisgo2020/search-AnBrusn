@@ -11,6 +11,7 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/polisgo2020/search-AnBrusn/config"
 	"github.com/polisgo2020/search-AnBrusn/index"
 	"github.com/polisgo2020/search-AnBrusn/interfaces/cmdInterface"
 	"github.com/polisgo2020/search-AnBrusn/interfaces/webInterface"
@@ -18,6 +19,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
 )
+
+var cfg config.Config
 
 func closeFile(f *os.File) {
 	if err := f.Close(); err != nil {
@@ -104,25 +107,26 @@ func createFromDirectory(dirname string) (index.Index, error) {
 	}
 }
 
+// searchInIndex runs web or cmd interface and perform search
 func searchInIndex(c *cli.Context) error {
 	log.Debug().Str("index", c.String("index")).Msg("searching in index")
 	invertedIndex, err := readIndexFromFile(c.String("index"))
 	if err != nil {
 		return err
 	}
-	if c.String("http") == "" {
-		c, err := cmdInterface.New(os.Stdin, os.Stdout, &invertedIndex)
-		if err != nil {
-			return err
-		}
-		return c.Run()
-	} else {
-		srv := &http.Server{Addr: c.String("http")}
+	if c.Bool("http") == true {
+		srv := &http.Server{Addr: cfg.Server}
 		w, err := webInterface.New(srv, &invertedIndex)
 		if err != nil {
 			return err
 		}
 		return w.Run()
+	} else {
+		c, err := cmdInterface.New(os.Stdin, os.Stdout, &invertedIndex)
+		if err != nil {
+			return err
+		}
+		return c.Run()
 	}
 }
 
@@ -165,7 +169,12 @@ func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]s
 }
 
 func main() {
-	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	cfg = config.Load()
+	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		log.Err(err).Msg("error while getting system env")
+	}
+	zerolog.SetGlobalLevel(logLevel)
 	app := &cli.App{
 		Name:  "Index",
 		Usage: "Create index from directory and search in index",
@@ -196,7 +205,7 @@ func main() {
 						Usage:    "Path to index file",
 						Required: true,
 					},
-					&cli.StringFlag{
+					&cli.BoolFlag{
 						Name:  "http",
 						Usage: "Input from http",
 					},
@@ -206,7 +215,7 @@ func main() {
 		},
 	}
 
-	err := app.Run(os.Args)
+	err = app.Run(os.Args)
 	if err != nil {
 		log.Err(err)
 	}
