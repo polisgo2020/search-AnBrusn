@@ -1,12 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,23 +12,16 @@ import (
 	"unicode"
 
 	"github.com/polisgo2020/search-AnBrusn/index"
+	"github.com/polisgo2020/search-AnBrusn/interfaces/cmdInterface"
+	"github.com/polisgo2020/search-AnBrusn/interfaces/webInterface"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
 )
 
-var searchForm = []byte(`
-<html>
-	<body>
-	<form action="/searchInIndex" method="get">
-		Search: <input type="text" name="userInput">
-		<input type="submit" value="Search">
-	</form>
-	</body>
-</html>
-`)
-
 func closeFile(f *os.File) {
 	if err := f.Close(); err != nil {
-		log.Fatal(err)
+		log.Err(err)
 	}
 }
 
@@ -114,72 +104,26 @@ func createFromDirectory(dirname string) (index.Index, error) {
 	}
 }
 
-// searchWithInputFromStdin reads user input from stdin and searches over inverted index.
-func searchWithInputFromStdin(indexFile string) error {
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	userInput := scanner.Text()
-	invertedIndex, err := readIndexFromFile(indexFile)
-	if err != nil {
-		return err
-	}
-	searchResults, err := invertedIndex.FindInIndex(userInput)
-	if err != nil {
-		return err
-	}
-	if len(searchResults) == 0 {
-		fmt.Println("No results")
-	} else {
-		for _, el := range searchResults {
-			fmt.Printf("%s (%d words were found)\n", el.Filename, el.Freq)
-		}
-	}
-	return nil
-}
-
-// searchWithInputFromHttp creates http user interface, reads user input and searches over inverted index.
-func searchWithInputFromHttp(server string, indexFile string) error {
-	srv := &http.Server{Addr: server}
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write(searchForm)
-	})
-	http.HandleFunc("/searchInIndex", func(w http.ResponseWriter, r *http.Request) {
-		userInput := r.FormValue("userInput")
-		invertedIndex, err := readIndexFromFile(indexFile)
-		if err != nil {
-			http.Error(w, "reading index error", http.StatusInternalServerError)
-			return
-		}
-		searchResults, err := invertedIndex.FindInIndex(userInput)
-		if err != nil {
-			http.Error(w, "searching error", http.StatusInternalServerError)
-			return
-		}
-		if len(searchResults) == 0 {
-			fmt.Fprintln(w, "No results")
-		} else {
-			for _, el := range searchResults {
-				fmt.Fprintf(w, "%s (%d words were found)\n", el.Filename, el.Freq)
-			}
-		}
-	})
-	if err := srv.ListenAndServe(); err != nil {
-		return err
-	}
-	return nil
-}
-
 func searchInIndex(c *cli.Context) error {
-	if c.String("http") == "" {
-		if err := searchWithInputFromStdin(c.String("index")); err != nil {
-			return err
-		}
-	} else {
-		if err := searchWithInputFromHttp(c.String("http"), c.String("index")); err != nil {
-			return err
-		}
+	log.Debug().Str("index", c.String("index")).Msg("searching in index")
+	invertedIndex, err := readIndexFromFile(c.String("index"))
+	if err != nil {
+		return err
 	}
-	return nil
+	if c.String("http") == "" {
+		c, err := cmdInterface.New(os.Stdin, os.Stdout, &invertedIndex)
+		if err != nil {
+			return err
+		}
+		return c.Run()
+	} else {
+		srv := &http.Server{Addr: c.String("http")}
+		w, err := webInterface.New(srv, &invertedIndex)
+		if err != nil {
+			return err
+		}
+		return w.Run()
+	}
 }
 
 // readIndexFromFile reads and decodes inverted index.
@@ -196,6 +140,7 @@ func readIndexFromFile(indexPath string) (index.Index, error) {
 }
 
 func createIndexFromFiles(c *cli.Context) error {
+	log.Debug().Str("directory", c.String("dir")).Str("index", c.String("index")).Msg("building index")
 	invertedIndex, err := createFromDirectory(c.String("dir"))
 	if err != nil {
 		return err
@@ -220,6 +165,7 @@ func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]s
 }
 
 func main() {
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	app := &cli.App{
 		Name:  "Index",
 		Usage: "Create index from directory and search in index",
@@ -262,6 +208,6 @@ func main() {
 
 	err := app.Run(os.Args)
 	if err != nil {
-		log.Fatal(err)
+		log.Err(err)
 	}
 }

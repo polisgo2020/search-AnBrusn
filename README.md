@@ -20,3 +20,4 @@ Search results are ranged by amount of found tokens.
 -   [`Stopwords`](github.com/bbalet/stopwords)
 -   [`Snowball`](github.com/kljensen/snowball)
 -   [`Cli`](github.com/urfave/cli/v2)
+-   [`Zerolog`](github.com/rs/zerolog)

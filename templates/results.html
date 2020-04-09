@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <style type="text/css">
+        .results {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+<body>
+<form class="results" action="/search" method="get">
+    <input type="text" name="userInput">
+    <input type="submit" value="Search">
+    <br />
+    {{range .}}
+        <br />
+        {{.Filename}} ({{.Freq}} words were found)
+    {{else}}
+        <br />
+        No results
+    {{end}}
+</form>
+
+</body>
+</html>
