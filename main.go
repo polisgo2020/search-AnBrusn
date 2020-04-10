@@ -1,12 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,27 +11,24 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/polisgo2020/search-AnBrusn/config"
 	"github.com/polisgo2020/search-AnBrusn/index"
+	"github.com/polisgo2020/search-AnBrusn/interfaces/cmdInterface"
+	"github.com/polisgo2020/search-AnBrusn/interfaces/webInterface"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
 )
 
-var searchForm = []byte(`
-<html>
-	<body>
-	<form action="/searchInIndex" method="get">
-		Search: <input type="text" name="userInput">
-		<input type="submit" value="Search">
-	</form>
-	</body>
-</html>
-`)
+var cfg config.Config
 
 func closeFile(f *os.File) {
 	if err := f.Close(); err != nil {
-		log.Fatal(err)
+		log.Err(err)
 	}
 }
 
+// writeInvertedIndex encodes index with json and writes it in output file.
 func writeInvertedIndex(outputFile string, invertedIndexes index.Index) error {
 	file, err := os.Create(outputFile)
 	if err != nil {
@@ -51,6 +45,7 @@ func writeInvertedIndex(outputFile string, invertedIndexes index.Index) error {
 	return nil
 }
 
+// readFile extracts tokens from file and adds them in inverted index.
 func readFile(ctx context.Context, path string, filename string,
 	dataChan chan<- [2]string, errChan chan<- error, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -72,6 +67,7 @@ func readFile(ctx context.Context, path string, filename string,
 	}
 }
 
+// createFromDirectory extracts tokens from files in directory and adds them in inverted index.
 func createFromDirectory(dirname string) (index.Index, error) {
 	invertedIndex := make(index.Index)
 	files, err := ioutil.ReadDir(dirname)
@@ -111,72 +107,30 @@ func createFromDirectory(dirname string) (index.Index, error) {
 	}
 }
 
-func searchWithInputFromStdin(indexFile string) error {
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	userInput := scanner.Text()
-	invertedIndex, err := readIndexFromFile(indexFile)
-	if err != nil {
-		return err
-	}
-	searchResults, err := invertedIndex.FindInIndex(userInput)
-	if err != nil {
-		return err
-	}
-	if len(searchResults) == 0 {
-		fmt.Println("No results")
-	} else {
-		for _, el := range searchResults {
-			fmt.Printf("%s (%d words were found)\n", el.Filename, el.Freq)
-		}
-	}
-	return nil
-}
-
-func searchWithInputFromHttp(server string, indexFile string) error {
-	srv := &http.Server{Addr: server}
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write(searchForm)
-	})
-	http.HandleFunc("/searchInIndex", func(w http.ResponseWriter, r *http.Request) {
-		userInput := r.FormValue("userInput")
-		invertedIndex, err := readIndexFromFile(indexFile)
-		if err != nil {
-			http.Error(w, "reading index error", http.StatusInternalServerError)
-			return
-		}
-		searchResults, err := invertedIndex.FindInIndex(userInput)
-		if err != nil {
-			http.Error(w, "searching error", http.StatusInternalServerError)
-			return
-		}
-		if len(searchResults) == 0 {
-			fmt.Fprintln(w, "No results")
-		} else {
-			for _, el := range searchResults {
-				fmt.Fprintf(w, "%s (%d words were found)\n", el.Filename, el.Freq)
-			}
-		}
-	})
-	if err := srv.ListenAndServe(); err != nil {
-		return err
-	}
-	return nil
-}
-
+// searchInIndex runs web or cmd interface and perform search
 func searchInIndex(c *cli.Context) error {
-	if c.String("http") == "" {
-		if err := searchWithInputFromStdin(c.String("index")); err != nil {
-			return err
-		}
-	} else {
-		if err := searchWithInputFromHttp(c.String("http"), c.String("index")); err != nil {
-			return err
-		}
+	log.Debug().Str("index", c.String("index")).Msg("searching in index")
+	invertedIndex, err := readIndexFromFile(c.String("index"))
+	if err != nil {
+		return err
 	}
-	return nil
+	if c.Bool("http") == true {
+		srv := &http.Server{Addr: cfg.Server}
+		w, err := webInterface.New(srv, &invertedIndex)
+		if err != nil {
+			return err
+		}
+		return w.Run()
+	} else {
+		c, err := cmdInterface.New(os.Stdin, os.Stdout, &invertedIndex)
+		if err != nil {
+			return err
+		}
+		return c.Run()
+	}
 }
 
+// readIndexFromFile reads and decodes inverted index.
 func readIndexFromFile(indexPath string) (index.Index, error) {
 	data, err := ioutil.ReadFile(indexPath)
 	if err != nil {
@@ -190,6 +144,7 @@ func readIndexFromFile(indexPath string) (index.Index, error) {
 }
 
 func createIndexFromFiles(c *cli.Context) error {
+	log.Debug().Str("directory", c.String("dir")).Str("index", c.String("index")).Msg("building index")
 	invertedIndex, err := createFromDirectory(c.String("dir"))
 	if err != nil {
 		return err
@@ -214,6 +169,15 @@ func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]s
 }
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Err(err).Msg("error while getting system env")
+	}
+	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		log.Err(err).Msg("error while getting loglevel from system env")
+	}
+	zerolog.SetGlobalLevel(logLevel)
 	app := &cli.App{
 		Name:  "Index",
 		Usage: "Create index from directory and search in index",
@@ -244,7 +208,7 @@ func main() {
 						Usage:    "Path to index file",
 						Required: true,
 					},
-					&cli.StringFlag{
+					&cli.BoolFlag{
 						Name:  "http",
 						Usage: "Input from http",
 					},
@@ -254,8 +218,8 @@ func main() {
 		},
 	}
 
-	err := app.Run(os.Args)
+	err = app.Run(os.Args)
 	if err != nil {
-		log.Fatal(err)
+		log.Err(err)
 	}
 }

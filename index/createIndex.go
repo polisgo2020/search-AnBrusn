@@ -1,3 +1,19 @@
+/*
+Package index implements inverted index, search over the built index.
+
+Usage
+
+New token can be added with AddToken function that extract token from word and add it to inverted index.
+Example:
+
+	err := i.AddToken(" word", "sourceFile.txt")
+
+To search over the index use FindInIndex function.
+
+	searchResults, err := i.FindInIndex("this is search query")
+
+Search results are ranged by amount of found tokens.
+*/
 package index
 
 import (
@@ -7,6 +23,7 @@ import (
 	"github.com/kljensen/snowball"
 )
 
+// FileWithFreq contains the name of the file and frequency og the token in it.
 type FileWithFreq struct {
 	Filename string
 	Freq     int
@@ -14,6 +31,7 @@ type FileWithFreq struct {
 
 type Index map[string][]FileWithFreq
 
+// AddToken extracts token from word and adds it in inverted index.
 func (index Index) AddToken(word string, filename string) error {
 	stemWord := stopwords.CleanString(word, "en", true)
 	stemWord = strings.TrimSpace(stemWord)
