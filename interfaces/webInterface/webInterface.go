@@ -16,7 +16,7 @@ type WebInterface struct {
 }
 
 func New(srv *http.Server, invertedIndex *index.Index) (*WebInterface, error) {
-	log.Debug().Str("server", srv.Addr).Msg("create http user interface")
+	log.Info().Str("server", srv.Addr).Msg("create http user interface")
 	if srv == nil || invertedIndex == nil {
 		return nil, errors.New("invalid server or index object")
 	}
@@ -55,8 +55,5 @@ func (web *WebInterface) Run() error {
 		}
 		tmplResults.Execute(w, searchResults)
 	})
-	if err := web.srv.ListenAndServe(); err != nil {
-		return err
-	}
-	return nil
+	return web.srv.ListenAndServe()
 }

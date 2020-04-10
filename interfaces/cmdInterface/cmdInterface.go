@@ -17,7 +17,7 @@ type CmdInterface struct {
 }
 
 func New(in *os.File, out *os.File, invertedIndex *index.Index) (*CmdInterface, error) {
-	log.Debug().Msg("create command line user interface")
+	log.Info().Msg("create command line user interface")
 	if in == nil || out == nil || invertedIndex == nil {
 		return nil, errors.New("invalid in, out or index object")
 	}

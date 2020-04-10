@@ -169,10 +169,13 @@ func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]s
 }
 
 func main() {
-	cfg = config.Load()
-	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
+	cfg, err := config.Load()
 	if err != nil {
 		log.Err(err).Msg("error while getting system env")
+	}
+	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		log.Err(err).Msg("error while getting loglevel from system env")
 	}
 	zerolog.SetGlobalLevel(logLevel)
 	app := &cli.App{

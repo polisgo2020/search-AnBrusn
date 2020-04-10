@@ -9,8 +9,10 @@ type Config struct {
 	Server   string `env:"SERVER" envDefault:":8080"`
 }
 
-func Load() Config {
+func Load() (Config, error) {
 	cfg := Config{}
-	env.Parse(&cfg)
-	return cfg
+	if err := env.Parse(&cfg); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
