@@ -9,8 +9,8 @@ import (
 	"github.com/kljensen/snowball"
 )
 
-// getTokensFromInput extracts tokens from user input.
-func getTokensFromInput(inpStr string) ([]string, error) {
+// GetTokensFromInput extracts tokens from user input.
+func GetTokensFromInput(inpStr string) ([]string, error) {
 	var userInput []string
 	wordsInInput := strings.FieldsFunc(inpStr, func(r rune) bool {
 		return !unicode.IsLetter(r)
@@ -33,7 +33,7 @@ func getTokensFromInput(inpStr string) ([]string, error) {
 // FindInIndex searches query over inverted index.
 // Search results are ranged by amount of found tokens.
 func (index Index) FindInIndex(userInput string) ([]FileWithFreq, error) {
-	inputTokens, err := getTokensFromInput(userInput)
+	inputTokens, err := GetTokensFromInput(userInput)
 	if err != nil {
 		return nil, err
 	}

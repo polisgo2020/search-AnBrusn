@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,35 +14,14 @@ import (
 	"github.com/polisgo2020/search-AnBrusn/index"
 	"github.com/polisgo2020/search-AnBrusn/interfaces/cmdInterface"
 	"github.com/polisgo2020/search-AnBrusn/interfaces/webInterface"
+	"github.com/polisgo2020/search-AnBrusn/models/database"
+	"github.com/polisgo2020/search-AnBrusn/models/file"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
 )
 
 var cfg config.Config
-
-func closeFile(f *os.File) {
-	if err := f.Close(); err != nil {
-		log.Err(err)
-	}
-}
-
-// writeInvertedIndex encodes index with json and writes it in output file.
-func writeInvertedIndex(outputFile string, invertedIndexes index.Index) error {
-	file, err := os.Create(outputFile)
-	if err != nil {
-		return err
-	}
-	defer closeFile(file)
-	indexes, err := json.Marshal(invertedIndexes)
-	if err != nil {
-		return err
-	}
-	if _, err = file.Write(indexes); err != nil {
-		return err
-	}
-	return nil
-}
 
 // readFile extracts tokens from file and adds them in inverted index.
 func readFile(ctx context.Context, path string, filename string,
@@ -107,22 +85,35 @@ func createFromDirectory(dirname string) (index.Index, error) {
 	}
 }
 
-// searchInIndex runs web or cmd interface and perform search
+// searchInIndex runs web or cmd interface and perform search over file or database
 func searchInIndex(c *cli.Context) error {
-	log.Debug().Str("index", c.String("index")).Msg("searching in index")
-	invertedIndex, err := readIndexFromFile(c.String("index"))
-	if err != nil {
-		return err
+	var invertedIndex index.Index
+	var err error
+	var searchFunc func(userInput string) ([]index.FileWithFreq, error)
+	if c.String("index") != "" {
+		log.Debug().Str("index", c.String("index")).Msg("searching in index")
+		invertedIndex, err = file.ReadIndex(c.String("index"))
+		if err != nil {
+			return err
+		}
+		searchFunc = invertedIndex.FindInIndex
+	} else {
+		log.Debug().Str("conDB", cfg.PgSQL).Msg("searching in database")
+		rep, err := database.New(cfg.PgSQL)
+		if err != nil {
+			return err
+		}
+		searchFunc = rep.FindInIndex
 	}
 	if c.Bool("http") == true {
 		srv := &http.Server{Addr: cfg.Server}
-		w, err := webInterface.New(srv, &invertedIndex)
+		w, err := webInterface.New(srv, searchFunc)
 		if err != nil {
 			return err
 		}
 		return w.Run()
 	} else {
-		c, err := cmdInterface.New(os.Stdin, os.Stdout, &invertedIndex)
+		c, err := cmdInterface.New(os.Stdin, os.Stdout, searchFunc)
 		if err != nil {
 			return err
 		}
@@ -130,29 +121,24 @@ func searchInIndex(c *cli.Context) error {
 	}
 }
 
-// readIndexFromFile reads and decodes inverted index.
-func readIndexFromFile(indexPath string) (index.Index, error) {
-	data, err := ioutil.ReadFile(indexPath)
-	if err != nil {
-		return nil, err
-	}
-	var invertedIndex = index.Index{}
-	if er := json.Unmarshal(data, &invertedIndex); er != nil {
-		return nil, err
-	}
-	return invertedIndex, nil
-}
-
+// createIndexFromFiles creates index ans saves it in file or database
 func createIndexFromFiles(c *cli.Context) error {
-	log.Debug().Str("directory", c.String("dir")).Str("index", c.String("index")).Msg("building index")
+	log.Debug().Str("directory", c.String("dir")).Msg("building index")
 	invertedIndex, err := createFromDirectory(c.String("dir"))
 	if err != nil {
 		return err
 	}
-	if err := writeInvertedIndex(c.String("index"), invertedIndex); err != nil {
-		return err
+	if c.String("index") != "" {
+		log.Debug().Str("index", c.String("index")).Msg("into file")
+		return file.WriteInvertedIndex(c.String("index"), invertedIndex)
+	} else {
+		log.Debug().Str("conDB", cfg.PgSQL).Msg("into database")
+		rep, err := database.New(cfg.PgSQL)
+		if err != nil {
+			return err
+		}
+		return rep.WriteInvertedIndex(invertedIndex)
 	}
-	return nil
 }
 
 func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]string, errChan chan error) {
@@ -169,7 +155,8 @@ func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]s
 }
 
 func main() {
-	cfg, err := config.Load()
+	var err error
+	cfg, err = config.Load()
 	if err != nil {
 		log.Err(err).Msg("error while getting system env")
 	}
@@ -194,7 +181,7 @@ func main() {
 					&cli.StringFlag{
 						Name:     "index",
 						Usage:    "Path to output index file",
-						Required: true,
+						Required: false,
 					},
 				},
 				Action: createIndexFromFiles,
@@ -206,7 +193,7 @@ func main() {
 					&cli.StringFlag{
 						Name:     "index",
 						Usage:    "Path to index file",
-						Required: true,
+						Required: false,
 					},
 					&cli.BoolFlag{
 						Name:  "http",
