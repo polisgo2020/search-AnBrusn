@@ -5,7 +5,6 @@ go 1.14
 require (
 	github.com/bbalet/stopwords v1.0.0
 	github.com/caarlos0/env v3.5.0+incompatible
-	github.com/go-pg/migrations/v7 v7.1.9
 	github.com/go-pg/pg v8.0.6+incompatible
 	github.com/go-pg/pg/v9 v9.1.6
 	github.com/jinzhu/inflection v1.0.0 // indirect
