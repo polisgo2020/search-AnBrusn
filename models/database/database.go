@@ -35,6 +35,11 @@ func New(cnString string) (Repository, error) {
 	if err != nil {
 		return Repository{}, err
 	}
+	log.Debug().
+		Str("database", pgOpt.Database).
+		Str("user", pgOpt.User).
+		Str("address", pgOpt.Addr).
+		Msg("create database connection")
 	pgdb := pg.Connect(pgOpt)
 	return Repository{pg: pgdb,}, nil
 }
@@ -71,11 +76,8 @@ func (rep Repository) FindInIndex(userInput string) ([]index.FileWithFreq, error
 // WriteInvertedIndex saves index into database
 func (rep Repository) WriteInvertedIndex(invertedIndex index.Index) error {
 	defer closeConnection(rep.pg)
-	if _, err := rep.pg.Exec("TRUNCATE tokens, files, occurrences RESTART IDENTITY;"); err != nil {
-		return err
-	}
 
-	for token, files := range invertedIndex {
+	for token, files := range invertedIndex.Data {
 		t := Token{Token: token}
 		if err := rep.pg.Insert(&t); err != nil {
 			return err

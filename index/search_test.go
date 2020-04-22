@@ -8,7 +8,7 @@ import (
 func TestGetTokensFromInput(t *testing.T) {
 	in := "plenty, different  tokens."
 	expected := []string{"plenti", "differ", "token"}
-	actual, err := getTokensFromInput(in)
+	actual, err := GetTokensFromInput(in)
 
 	if err != nil {
 		t.Errorf("error occured\nexpected: %v", expected)
@@ -19,11 +19,11 @@ func TestGetTokensFromInput(t *testing.T) {
 }
 
 func TestIndex_FindInIndex(t *testing.T) {
-	in := make(Index)
-	in["plenti"] = []FileWithFreq{{"source1.txt", 2}}
-	in["differ"] = []FileWithFreq{{"source1.txt", 1}, {"source2.txt", 2}}
-	in["token"] = []FileWithFreq{{"source1.txt", 1}}
-	in["good"] = []FileWithFreq{{"source1.txt", 1}}
+	in := NewIndex()
+	in.Data["plenti"] = []FileWithFreq{{"source1.txt", 2}}
+	in.Data["differ"] = []FileWithFreq{{"source1.txt", 1}, {"source2.txt", 2}}
+	in.Data["token"] = []FileWithFreq{{"source1.txt", 1}}
+	in.Data["good"] = []FileWithFreq{{"source1.txt", 1}}
 
 	expected := []FileWithFreq{{"source2.txt", 2}, {"source1.txt", 1}}
 	actual, err := in.FindInIndex("different")

@@ -19,11 +19,11 @@ func closeFile(f *os.File) {
 func ReadIndex(indexPath string) (index.Index, error) {
 	data, err := ioutil.ReadFile(indexPath)
 	if err != nil {
-		return nil, err
+		return index.Index{}, err
 	}
-	var invertedIndex = index.Index{}
-	if er := json.Unmarshal(data, &invertedIndex); er != nil {
-		return nil, err
+	var invertedIndex = index.NewIndex()
+	if er := json.Unmarshal(data, &invertedIndex.Data); er != nil {
+		return index.Index{}, err
 	}
 	return invertedIndex, nil
 }
@@ -35,7 +35,7 @@ func WriteInvertedIndex(outputFile string, invertedIndexes index.Index) error {
 		return err
 	}
 	defer closeFile(file)
-	indexes, err := json.Marshal(invertedIndexes)
+	indexes, err := json.Marshal(invertedIndexes.Data)
 	if err != nil {
 		return err
 	}

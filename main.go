@@ -47,20 +47,18 @@ func readFile(ctx context.Context, path string, filename string,
 
 // createFromDirectory extracts tokens from files in directory and adds them in inverted index.
 func createFromDirectory(dirname string) (index.Index, error) {
-	invertedIndex := make(index.Index)
+	invertedIndex := index.NewIndex()
 	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
-		return nil, err
+		return index.Index{}, err
 	}
 
-	errChan := make(chan error)
-	dataChan := make(chan [2]string)
-	defer close(errChan)
-	defer close(dataChan)
+	defer close(invertedIndex.ErrChan)
+	defer close(invertedIndex.DataChan)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	go listener(ctx, invertedIndex, dataChan, errChan)
+	go invertedIndex.Listener(ctx)
 
 	wgForFilesReading := &sync.WaitGroup{}
 	wgForFilesReading.Add(len(files))
@@ -71,14 +69,14 @@ func createFromDirectory(dirname string) (index.Index, error) {
 
 	for _, currentFile := range files {
 		path := filepath.Join(dirname, currentFile.Name())
-		go readFile(ctx, path, currentFile.Name(), dataChan, errChan, wgForFilesReading)
+		go readFile(ctx, path, currentFile.Name(), invertedIndex.DataChan, invertedIndex.ErrChan, wgForFilesReading)
 	}
 
 	for {
 		select {
-		case err := <-errChan:
+		case err := <-invertedIndex.ErrChan:
 			cancel()
-			return nil, err
+			return index.Index{}, err
 		case <-ctx.Done():
 			return invertedIndex, nil
 		}
@@ -98,7 +96,7 @@ func searchInIndex(c *cli.Context) error {
 		}
 		searchFunc = invertedIndex.FindInIndex
 	} else {
-		log.Debug().Str("conDB", cfg.PgSQL).Msg("searching in database")
+		log.Debug().Msg("searching in database")
 		rep, err := database.New(cfg.PgSQL)
 		if err != nil {
 			return err
@@ -132,25 +130,12 @@ func createIndexFromFiles(c *cli.Context) error {
 		log.Debug().Str("index", c.String("index")).Msg("into file")
 		return file.WriteInvertedIndex(c.String("index"), invertedIndex)
 	} else {
-		log.Debug().Str("conDB", cfg.PgSQL).Msg("into database")
+		log.Debug().Msg("into database")
 		rep, err := database.New(cfg.PgSQL)
 		if err != nil {
 			return err
 		}
 		return rep.WriteInvertedIndex(invertedIndex)
-	}
-}
-
-func listener(ctx context.Context, invertedIndex index.Index, dataChan chan [2]string, errChan chan error) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case wordInfo := <-dataChan:
-			if err := invertedIndex.AddToken(wordInfo[0], wordInfo[1]); err != nil {
-				errChan <- err
-			}
-		}
 	}
 }
 

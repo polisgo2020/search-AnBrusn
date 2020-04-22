@@ -17,6 +17,7 @@ Search results are ranged by amount of found tokens.
 package index
 
 import (
+	"context"
 	"strings"
 
 	"github.com/bbalet/stopwords"
@@ -29,7 +30,19 @@ type FileWithFreq struct {
 	Freq     int
 }
 
-type Index map[string][]FileWithFreq
+type Index struct {
+	Data     map[string][]FileWithFreq
+	ErrChan  chan error
+	DataChan chan [2]string
+}
+
+func NewIndex() Index {
+	return Index{
+		Data:     make(map[string][]FileWithFreq),
+		ErrChan:  make(chan error),
+		DataChan: make(chan [2]string),
+	}
+}
 
 // AddToken extracts token from word and adds it in inverted index.
 func (index Index) AddToken(word string, filename string) error {
@@ -41,16 +54,29 @@ func (index Index) AddToken(word string, filename string) error {
 			return err
 		}
 		isFound := false
-		for i, el := range index[stemWord] {
+		for i, el := range index.Data[stemWord] {
 			if el.Filename == filename {
-				index[stemWord][i].Freq++
+				index.Data[stemWord][i].Freq++
 				isFound = true
 				break
 			}
 		}
 		if !isFound {
-			index[stemWord] = append(index[stemWord], FileWithFreq{filename, 1})
+			index.Data[stemWord] = append(index.Data[stemWord], FileWithFreq{filename, 1})
 		}
 	}
 	return nil
+}
+
+func (index Index) Listener(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case wordInfo := <-index.DataChan:
+			if err := index.AddToken(wordInfo[0], wordInfo[1]); err != nil {
+				index.ErrChan <- err
+			}
+		}
+	}
 }
