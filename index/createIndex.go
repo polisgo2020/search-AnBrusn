@@ -18,6 +18,7 @@ package index
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/bbalet/stopwords"
@@ -44,15 +45,20 @@ func NewIndex() Index {
 	}
 }
 
-// AddToken extracts token from word and adds it in inverted index.
-func (index Index) AddToken(word string, filename string) error {
+// GetTokenFromWord extracts token
+func GetTokenFromWord(word string) (string, error) {
 	stemWord := stopwords.CleanString(word, "en", true)
 	stemWord = strings.TrimSpace(stemWord)
+	return snowball.Stem(stemWord, "english", true)
+}
+
+// AddToken adds tokens in inverted index.
+func (index Index) AddToken(word string, filename string) error {
+	stemWord, err := GetTokenFromWord(word)
+	if err != nil {
+		return fmt.Errorf("can not extract token from word %w", err)
+	}
 	if len(stemWord) > 0 {
-		stemWord, err := snowball.Stem(stemWord, "english", true)
-		if err != nil {
-			return err
-		}
 		isFound := false
 		for i, el := range index.Data[stemWord] {
 			if el.Filename == filename {
@@ -68,6 +74,7 @@ func (index Index) AddToken(word string, filename string) error {
 	return nil
 }
 
+// Listener listens channel of words and adds them in index
 func (index Index) Listener(ctx context.Context) {
 	for {
 		select {

@@ -1,12 +1,10 @@
 package index
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"unicode"
-
-	"github.com/bbalet/stopwords"
-	"github.com/kljensen/snowball"
 )
 
 // GetTokensFromInput extracts tokens from user input.
@@ -16,14 +14,11 @@ func GetTokensFromInput(inpStr string) ([]string, error) {
 		return !unicode.IsLetter(r)
 	})
 	for _, word := range wordsInInput {
-		stemWord := stopwords.CleanString(word, "en", true)
-		stemWord = strings.TrimSpace(stemWord)
+		stemWord, err := GetTokenFromWord(word)
+		if err != nil {
+			return nil, fmt.Errorf("can not extract token from word %w", err)
+		}
 		if len(stemWord) > 0 {
-			var err error
-			stemWord, err = snowball.Stem(word, "english", true)
-			if err != nil {
-				return nil, err
-			}
 			userInput = AppendIfMissing(userInput, stemWord)
 		}
 	}
@@ -35,7 +30,7 @@ func GetTokensFromInput(inpStr string) ([]string, error) {
 func (index Index) FindInIndex(userInput string) ([]FileWithFreq, error) {
 	inputTokens, err := GetTokensFromInput(userInput)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("can not get tokens from user input %w", err)
 	}
 	var searchResults []FileWithFreq
 	for i, token := range inputTokens {

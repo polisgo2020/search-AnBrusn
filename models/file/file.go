@@ -2,6 +2,7 @@ package file
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 
@@ -19,11 +20,11 @@ func closeFile(f *os.File) {
 func ReadIndex(indexPath string) (index.Index, error) {
 	data, err := ioutil.ReadFile(indexPath)
 	if err != nil {
-		return index.Index{}, err
+		return index.Index{}, fmt.Errorf("can not read file %w", err)
 	}
 	var invertedIndex = index.NewIndex()
 	if er := json.Unmarshal(data, &invertedIndex.Data); er != nil {
-		return index.Index{}, err
+		return index.Index{}, fmt.Errorf("can not decode data %w", err)
 	}
 	return invertedIndex, nil
 }
@@ -32,15 +33,15 @@ func ReadIndex(indexPath string) (index.Index, error) {
 func WriteInvertedIndex(outputFile string, invertedIndexes index.Index) error {
 	file, err := os.Create(outputFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("can not create output file %w", err)
 	}
 	defer closeFile(file)
 	indexes, err := json.Marshal(invertedIndexes.Data)
 	if err != nil {
-		return err
+		return fmt.Errorf("can not code data %w", err)
 	}
 	if _, err = file.Write(indexes); err != nil {
-		return err
+		return fmt.Errorf("can not write index %w", err)
 	}
 	return nil
 }

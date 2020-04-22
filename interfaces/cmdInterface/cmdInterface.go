@@ -2,7 +2,6 @@ package cmdInterface
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
 
@@ -19,7 +18,7 @@ type CmdInterface struct {
 func New(in *os.File, out *os.File, searchFunc func(userInput string) ([]index.FileWithFreq, error)) (*CmdInterface, error) {
 	log.Info().Msg("create command line user interface")
 	if in == nil || out == nil {
-		return nil, errors.New("invalid in or out")
+		return nil, fmt.Errorf("invalid in or out")
 	}
 	return &CmdInterface{
 		in:         in,
@@ -37,7 +36,7 @@ func (c *CmdInterface) Run() error {
 		log.Debug().Str("text", userInput).Msg("new search request")
 		searchResults, err := c.searchFunc(userInput)
 		if err != nil {
-			return err
+			return fmt.Errorf("ca not search %w", err)
 		}
 		if len(searchResults) == 0 {
 			fmt.Fprintln(c.out, "No results")
@@ -47,5 +46,4 @@ func (c *CmdInterface) Run() error {
 			}
 		}
 	}
-	return nil
 }

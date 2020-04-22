@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -29,7 +30,7 @@ func readFile(ctx context.Context, path string, filename string,
 	defer wg.Done()
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
-		errChan <- err
+		errChan <- fmt.Errorf("can not read file %w", err)
 		return
 	}
 	words := strings.FieldsFunc(string(data), func(r rune) bool {
@@ -46,19 +47,18 @@ func readFile(ctx context.Context, path string, filename string,
 }
 
 // createFromDirectory extracts tokens from files in directory and adds them in inverted index.
-func createFromDirectory(dirname string) (index.Index, error) {
-	invertedIndex := index.NewIndex()
+func createFromDirectory(dirname string, dataChan chan [2]string, errChan chan error, listener func(ctx context.Context)) error {
 	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
-		return index.Index{}, err
+		return  fmt.Errorf("can not access input directory %w", err)
 	}
 
-	defer close(invertedIndex.ErrChan)
-	defer close(invertedIndex.DataChan)
+	defer close(errChan)
+	defer close(dataChan)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	go invertedIndex.Listener(ctx)
+	go listener(ctx)
 
 	wgForFilesReading := &sync.WaitGroup{}
 	wgForFilesReading.Add(len(files))
@@ -69,16 +69,16 @@ func createFromDirectory(dirname string) (index.Index, error) {
 
 	for _, currentFile := range files {
 		path := filepath.Join(dirname, currentFile.Name())
-		go readFile(ctx, path, currentFile.Name(), invertedIndex.DataChan, invertedIndex.ErrChan, wgForFilesReading)
+		go readFile(ctx, path, currentFile.Name(), dataChan, errChan, wgForFilesReading)
 	}
 
 	for {
 		select {
-		case err := <-invertedIndex.ErrChan:
+		case err := <-errChan:
 			cancel()
-			return index.Index{}, err
+			return err
 		case <-ctx.Done():
-			return invertedIndex, nil
+			return nil
 		}
 	}
 }
@@ -92,15 +92,16 @@ func searchInIndex(c *cli.Context) error {
 		log.Debug().Str("index", c.String("index")).Msg("searching in index")
 		invertedIndex, err = file.ReadIndex(c.String("index"))
 		if err != nil {
-			return err
+			return fmt.Errorf("can not read index %w", err)
 		}
 		searchFunc = invertedIndex.FindInIndex
 	} else {
 		log.Debug().Msg("searching in database")
 		rep, err := database.New(cfg.PgSQL)
 		if err != nil {
-			return err
+			return fmt.Errorf("can not connect to database %w", err)
 		}
+		defer rep.CloseConnection()
 		searchFunc = rep.FindInIndex
 	}
 	if c.Bool("http") == true {
@@ -122,21 +123,25 @@ func searchInIndex(c *cli.Context) error {
 // createIndexFromFiles creates index ans saves it in file or database
 func createIndexFromFiles(c *cli.Context) error {
 	log.Debug().Str("directory", c.String("dir")).Msg("building index")
-	invertedIndex, err := createFromDirectory(c.String("dir"))
-	if err != nil {
-		return err
-	}
 	if c.String("index") != "" {
+		i := index.NewIndex()
+		if err := createFromDirectory(c.String("dir"), i.DataChan, i.ErrChan, i.Listener); err != nil {
+			return fmt.Errorf("can not create index fron directory %w", err)
+		}
 		log.Debug().Str("index", c.String("index")).Msg("into file")
-		return file.WriteInvertedIndex(c.String("index"), invertedIndex)
+		return file.WriteInvertedIndex(c.String("index"), i)
 	} else {
 		log.Debug().Msg("into database")
 		rep, err := database.New(cfg.PgSQL)
 		if err != nil {
-			return err
+			return fmt.Errorf("can not connect to database %w", err)
 		}
-		return rep.WriteInvertedIndex(invertedIndex)
+		defer rep.CloseConnection()
+		if err := createFromDirectory(c.String("dir"), rep.DataChan, rep.ErrChan, rep.Listener); err != nil {
+			return fmt.Errorf("can not create index fron directory %w", err)
+		}
 	}
+	return nil
 }
 
 func main() {

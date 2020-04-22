@@ -1,6 +1,8 @@
 package database
 
 import (
+	"context"
+	"fmt"
 	"github.com/go-pg/pg"
 	"github.com/polisgo2020/search-AnBrusn/index"
 	"github.com/rs/zerolog/log"
@@ -27,9 +29,12 @@ type Occurrence struct {
 }
 
 type Repository struct {
-	pg *pg.DB
+	pg       *pg.DB
+	ErrChan  chan error
+	DataChan chan [2]string
 }
 
+// New connects to database
 func New(cnString string) (Repository, error) {
 	pgOpt, err := pg.ParseURL(cnString)
 	if err != nil {
@@ -41,11 +46,11 @@ func New(cnString string) (Repository, error) {
 		Str("address", pgOpt.Addr).
 		Msg("create database connection")
 	pgdb := pg.Connect(pgOpt)
-	return Repository{pg: pgdb,}, nil
+	return Repository{pg: pgdb, ErrChan: make(chan error), DataChan: make(chan [2]string)}, nil
 }
 
-func closeConnection(pgdb *pg.DB) {
-	if err := pgdb.Close(); err != nil {
+func (rep Repository) CloseConnection() {
+	if err := rep.pg.Close(); err != nil {
 		log.Err(err)
 	}
 }
@@ -54,7 +59,7 @@ func closeConnection(pgdb *pg.DB) {
 func (rep Repository) FindInIndex(userInput string) ([]index.FileWithFreq, error) {
 	inputTokens, err := index.GetTokensFromInput(userInput)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("can not get tokens from user input %w", err)
 	}
 	var res []index.FileWithFreq
 	err = rep.pg.Model(new(File)).
@@ -68,33 +73,69 @@ func (rep Repository) FindInIndex(userInput string) ([]index.FileWithFreq, error
 		OrderExpr("sum(occurrences.num) desc").
 		Select(&res)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("can not select from database %w", err)
 	}
 	return res, nil
 }
 
-// WriteInvertedIndex saves index into database
-func (rep Repository) WriteInvertedIndex(invertedIndex index.Index) error {
-	defer closeConnection(rep.pg)
-
-	for token, files := range invertedIndex.Data {
-		t := Token{Token: token}
-		if err := rep.pg.Insert(&t); err != nil {
-			return err
+// AddToken adds occurrence of token into database
+func (rep Repository) AddToken(word string, filename string) error {
+	stemWord, err := index.GetTokenFromWord(word)
+	if err != nil {
+		return fmt.Errorf("can not extract token from word %w", err)
+	}
+	if len(stemWord) > 0 {
+		var fileId int
+		_, err := rep.pg.Model(&File{Name: filename}).
+			Column("id").
+			Where("name = ?", filename).
+			Returning("id").
+			SelectOrInsert(&fileId)
+		if err != nil {
+			return fmt.Errorf("can not insert file %w", err)
 		}
-		for _, fileInfo := range files {
-			var f File
-			if err := rep.pg.Model(&f).Where("name = ?", fileInfo.Filename).Select(); err != nil {
-				f = File{Name: fileInfo.Filename}
-				if err = rep.pg.Insert(&f); err != nil {
-					return err
-				}
-			}
-			o := Occurrence{TokenID: t.ID, FileID: f.ID, Number: fileInfo.Freq}
-			if err := rep.pg.Insert(&o); err != nil {
-				return err
-			}
+		var tokenId int
+		_, err = rep.pg.Model(&Token{Token: stemWord}).
+			Column("id").
+			Where("token = ?", stemWord).
+			Returning("id").
+			SelectOrInsert(&tokenId)
+		if err != nil {
+			return fmt.Errorf("can not insert token %w", err)
+		}
+		exists, err := rep.pg.Model(new(Occurrence)).
+			Where("token_id = ?", tokenId).
+			Where("file_id = ?", fileId).
+			Exists()
+		if err != nil {
+			return fmt.Errorf("can not insert occurence %w", err)
+		}
+		if !exists {
+			_, err = rep.pg.Model(&Occurrence{TokenID: tokenId, FileID: fileId, Number: 1}).Insert()
+		} else {
+			_, err = rep.pg.Model(new(Occurrence)).
+				Set("num = num + 1").
+				Where("token_id = ?", tokenId).
+				Where("file_id = ?", fileId).
+				Update()
+		}
+		if err != nil {
+			return fmt.Errorf("cannot insert occurrence %w", err)
 		}
 	}
 	return nil
+}
+
+// Listener listens channel of words and adds them in database
+func (rep Repository) Listener(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case wordInfo := <-rep.DataChan:
+			if err := rep.AddToken(wordInfo[0], wordInfo[1]); err != nil {
+				rep.ErrChan <- err
+			}
+		}
+	}
 }

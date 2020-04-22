@@ -1,7 +1,7 @@
 package webInterface
 
 import (
-	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"path"
@@ -18,7 +18,7 @@ type WebInterface struct {
 func New(srv *http.Server, searchFunc func(userInput string) ([]index.FileWithFreq, error)) (*WebInterface, error) {
 	log.Info().Str("server", srv.Addr).Msg("create http user interface")
 	if srv == nil {
-		return nil, errors.New("invalid server")
+		return nil, fmt.Errorf("invalid server")
 	}
 	return &WebInterface{
 		srv:        srv,
