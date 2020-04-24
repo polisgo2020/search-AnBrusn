@@ -2,7 +2,6 @@ package cmdInterface
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
 
@@ -11,20 +10,20 @@ import (
 )
 
 type CmdInterface struct {
-	in            *os.File
-	out           *os.File
-	invertedIndex *index.Index
+	in         *os.File
+	out        *os.File
+	searchFunc func(userInput string) ([]index.FileWithFreq, error)
 }
 
-func New(in *os.File, out *os.File, invertedIndex *index.Index) (*CmdInterface, error) {
+func New(in *os.File, out *os.File, searchFunc func(userInput string) ([]index.FileWithFreq, error)) (*CmdInterface, error) {
 	log.Info().Msg("create command line user interface")
-	if in == nil || out == nil || invertedIndex == nil {
-		return nil, errors.New("invalid in, out or index object")
+	if in == nil || out == nil {
+		return nil, fmt.Errorf("invalid in or out")
 	}
 	return &CmdInterface{
-		in:            in,
-		out:           out,
-		invertedIndex: invertedIndex,
+		in:         in,
+		out:        out,
+		searchFunc: searchFunc,
 	}, nil
 }
 
@@ -35,9 +34,9 @@ func (c *CmdInterface) Run() error {
 		scanner.Scan()
 		userInput := scanner.Text()
 		log.Debug().Str("text", userInput).Msg("new search request")
-		searchResults, err := c.invertedIndex.FindInIndex(userInput)
+		searchResults, err := c.searchFunc(userInput)
 		if err != nil {
-			return err
+			return fmt.Errorf("ca not search %w", err)
 		}
 		if len(searchResults) == 0 {
 			fmt.Fprintln(c.out, "No results")
@@ -47,5 +46,4 @@ func (c *CmdInterface) Run() error {
 			}
 		}
 	}
-	return nil
 }

@@ -1,7 +1,7 @@
 package webInterface
 
 import (
-	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"path"
@@ -11,18 +11,18 @@ import (
 )
 
 type WebInterface struct {
-	srv           *http.Server
-	invertedIndex *index.Index
+	srv        *http.Server
+	searchFunc func(userInput string) ([]index.FileWithFreq, error)
 }
 
-func New(srv *http.Server, invertedIndex *index.Index) (*WebInterface, error) {
+func New(srv *http.Server, searchFunc func(userInput string) ([]index.FileWithFreq, error)) (*WebInterface, error) {
 	log.Info().Str("server", srv.Addr).Msg("create http user interface")
-	if srv == nil || invertedIndex == nil {
-		return nil, errors.New("invalid server or index object")
+	if srv == nil {
+		return nil, fmt.Errorf("invalid server")
 	}
 	return &WebInterface{
-		srv:           srv,
-		invertedIndex: invertedIndex,
+		srv:        srv,
+		searchFunc: searchFunc,
 	}, nil
 }
 
@@ -47,7 +47,7 @@ func (web *WebInterface) Run() error {
 			http.Error(w, "reading index error", http.StatusInternalServerError)
 			return
 		}
-		searchResults, err := web.invertedIndex.FindInIndex(userInput)
+		searchResults, err := web.searchFunc(userInput)
 		if err != nil {
 			log.Err(err).Msg("error while searching")
 			http.Error(w, "searching error", http.StatusInternalServerError)

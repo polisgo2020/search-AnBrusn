@@ -1,29 +1,24 @@
 package index
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"unicode"
-
-	"github.com/bbalet/stopwords"
-	"github.com/kljensen/snowball"
 )
 
-// getTokensFromInput extracts tokens from user input.
-func getTokensFromInput(inpStr string) ([]string, error) {
+// GetTokensFromInput extracts tokens from user input.
+func GetTokensFromInput(inpStr string) ([]string, error) {
 	var userInput []string
 	wordsInInput := strings.FieldsFunc(inpStr, func(r rune) bool {
 		return !unicode.IsLetter(r)
 	})
 	for _, word := range wordsInInput {
-		stemWord := stopwords.CleanString(word, "en", true)
-		stemWord = strings.TrimSpace(stemWord)
+		stemWord, err := GetTokenFromWord(word)
+		if err != nil {
+			return nil, fmt.Errorf("can not extract token from word %w", err)
+		}
 		if len(stemWord) > 0 {
-			var err error
-			stemWord, err = snowball.Stem(word, "english", true)
-			if err != nil {
-				return nil, err
-			}
 			userInput = AppendIfMissing(userInput, stemWord)
 		}
 	}
@@ -33,13 +28,13 @@ func getTokensFromInput(inpStr string) ([]string, error) {
 // FindInIndex searches query over inverted index.
 // Search results are ranged by amount of found tokens.
 func (index Index) FindInIndex(userInput string) ([]FileWithFreq, error) {
-	inputTokens, err := getTokensFromInput(userInput)
+	inputTokens, err := GetTokensFromInput(userInput)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("can not get tokens from user input %w", err)
 	}
 	var searchResults []FileWithFreq
 	for i, token := range inputTokens {
-		filesWithToken, ok := index[token]
+		filesWithToken, ok := index.Data[token]
 		if !ok {
 			return nil, nil
 		}

@@ -7,6 +7,7 @@ import (
 type Config struct {
 	LogLevel string `env:"LOGLEVEL" envDefault:"info"`
 	Server   string `env:"SERVER" envDefault:":8080"`
+	PgSQL    string `env:"PGSQL"`
 }
 
 func Load() (Config, error) {

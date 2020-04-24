@@ -17,6 +17,8 @@ Search results are ranged by amount of found tokens.
 package index
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	"github.com/bbalet/stopwords"
@@ -29,28 +31,59 @@ type FileWithFreq struct {
 	Freq     int
 }
 
-type Index map[string][]FileWithFreq
+type Index struct {
+	Data     map[string][]FileWithFreq
+	ErrChan  chan error
+	DataChan chan [2]string
+}
 
-// AddToken extracts token from word and adds it in inverted index.
-func (index Index) AddToken(word string, filename string) error {
+func NewIndex() Index {
+	return Index{
+		Data:     make(map[string][]FileWithFreq),
+		ErrChan:  make(chan error),
+		DataChan: make(chan [2]string),
+	}
+}
+
+// GetTokenFromWord extracts token
+func GetTokenFromWord(word string) (string, error) {
 	stemWord := stopwords.CleanString(word, "en", true)
 	stemWord = strings.TrimSpace(stemWord)
+	return snowball.Stem(stemWord, "english", true)
+}
+
+// AddToken adds tokens in inverted index.
+func (index Index) AddToken(word string, filename string) error {
+	stemWord, err := GetTokenFromWord(word)
+	if err != nil {
+		return fmt.Errorf("can not extract token from word %w", err)
+	}
 	if len(stemWord) > 0 {
-		stemWord, err := snowball.Stem(stemWord, "english", true)
-		if err != nil {
-			return err
-		}
 		isFound := false
-		for i, el := range index[stemWord] {
+		for i, el := range index.Data[stemWord] {
 			if el.Filename == filename {
-				index[stemWord][i].Freq++
+				index.Data[stemWord][i].Freq++
 				isFound = true
 				break
 			}
 		}
 		if !isFound {
-			index[stemWord] = append(index[stemWord], FileWithFreq{filename, 1})
+			index.Data[stemWord] = append(index.Data[stemWord], FileWithFreq{filename, 1})
 		}
 	}
 	return nil
+}
+
+// Listener listens channel of words and adds them in index
+func (index Index) Listener(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case wordInfo := <-index.DataChan:
+			if err := index.AddToken(wordInfo[0], wordInfo[1]); err != nil {
+				index.ErrChan <- err
+			}
+		}
+	}
 }
